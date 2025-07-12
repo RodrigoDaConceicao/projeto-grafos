@@ -9,9 +9,11 @@ class Window:
         self.root = tk.Tk()
         self.root.title("Sudoku Viewer")
         self.entries = {}
-        self.locked = True
+        self.edit = False
 
         self._build_interface()
+
+        self.update_lock()
 
     def _build_interface(self):
         # Main frame
@@ -26,12 +28,11 @@ class Window:
         side_panel.grid(row=0, column=1, sticky="N")
 
         ttk.Button(side_panel, text="Solve", command=self._on_solve).pack(fill='x', pady=5)
-        self.lock_button = ttk.Button(side_panel, text="Unlock", command=self._on_toggle_lock)
-        self.lock_button.pack(fill='x', pady=5)
+        self.edit_button = ttk.Button(side_panel, text="Save" if self.edit else "Edit", command=self._on_toggle_edit)
+        self.edit_button.pack(fill='x', pady=5)
         ttk.Button(side_panel, text="Clear", command=self._on_clear).pack(fill='x', pady=5)
 
     def _build_grid(self, parent):
-
         for row in range(self.size):
             for col in range(self.size):
                 value = self.graph.get_vertex(row, col).color
@@ -39,13 +40,11 @@ class Window:
                 entry.grid(row=row, column=col, padx=1, pady=1, ipadx=5, ipady=5)
                 if value != 0:
                     entry.insert(0, str(value))
-                    entry.config(state='disabled', cursor='arrow')
                 else:
                     entry.insert(0, "")
 
                 entry.bind("<FocusIn>", self._on_focus)
                 entry.bind("<Key>", lambda e, ent=entry: self._on_keypress(e, ent))
-                entry.bind("<FocusOut>", lambda e, r=row, c=col: self._on_value_changed(e, r, c))
                 # Highlight block borders
                 entry.config(highlightthickness=2)
                 if col % self.dimension == 0:
@@ -66,6 +65,7 @@ class Window:
 
         if keysym == 'BackSpace':
             entry.delete(0, tk.END)
+            self._update_graph_from_entry(entry)
             return "break"  # Prevent default backspace behavior
         if not char.isdigit() or (char == '0' and entry.get() == ""):
             return "break"  # Ignore non-digit or '0'
@@ -73,10 +73,7 @@ class Window:
         current_text = entry.get()
 
         # If this is the first typed character after focus, treat as a fresh value
-        if not getattr(entry, '_typed', False):
-            new_text = char
-        else:
-            new_text = current_text + char
+        new_text = char if not getattr(entry, '_typed', False) else current_text + char
 
         # Check if new value exceeds max allowed
         try:
@@ -88,46 +85,64 @@ class Window:
         if not getattr(entry, '_typed', False):
             entry.delete(0, tk.END)
             entry._typed = True  # Now mark as typed
+        
+        # Insert char manually since we're overriding default behavior
+        entry.insert(tk.END, char)
+        if self.edit: 
+            entry.config(fg='black')
+        else:
+            entry.config(fg='blue')
+        self._update_graph_from_entry(entry)
+
+        return "break"  # Stop default event so it doesn't double type
 
     def _on_solve(self):
-        print("Solve button pressed (logic not implemented yet)")
+        if self.graph.solve_brute_force():
+            for (row, col), entry in self.entries.items():
+                vertex = self.graph.get_vertex(row, col)
+                if not vertex.locked:
+                    entry.insert(0, str(vertex.color))
+                    entry.config(fg='blue')  # User-filled / solver-filled
 
-    def _on_toggle_lock(self):
-        self.locked = not self.locked
-        self.lock_button.config(text="Unlock" if self.locked else "Lock")
+    def _on_toggle_edit(self):
+        self.edit = not self.edit
+        self.edit_button.config(text="Save" if self.edit else "Edit")
 
+        self.update_lock()
+
+    def update_lock(self):
         for (row, col), entry in self.entries.items():
-            if self.graph.get_vertex(row, col).color != 0:
-                if self.locked:
-                    entry.config(state='disabled', cursor='arrow')
-                else:
+            if self.graph.get_vertex(row, col).locked:
+                if self.edit:
                     entry.config(state='normal', cursor='xterm')
+                else:
+                    entry.config(state='disabled', cursor='arrow')
 
     def _on_clear(self):
         for (row, col), entry in self.entries.items():
-            if self.graph.get_vertex(row, col).color != 0:
+            if not self.graph.get_vertex(row, col).locked or self.edit:
                 entry.config(state='normal')  # Temporarily unlock to clear
                 entry.delete(0, tk.END)
-                if self.locked:
-                    entry.config(state='disabled')
-
-    def _on_value_changed(self, event, row, col):
-        entry = event.widget
-        text = entry.get().strip()
-
-        if text == "":
-            self.graph.set_color(row, col, 0)
-        else:
-            try:
-                value = int(text)
-                if 1 <= value <= self.size:
-                    self.graph.set_color(row, col, value)
-                else:
-                    entry.delete(0, tk.END)
-                    self.graph.set_color(row, col, 0)
-            except ValueError:
-                entry.delete(0, tk.END)
                 self.graph.set_color(row, col, 0)
+
+    def _update_graph_from_entry(self, entry):
+        for (row, col), e in self.entries.items():
+            if e == entry:
+                text = entry.get().strip()
+                if text == "":
+                    self.graph.set_color(row, col, 0, self.edit)
+                else:
+                    try:
+                        val = int(text)
+                        if 1 <= val <= self.size:
+                            self.graph.set_color(row, col, val, self.edit)
+                            if not self.graph.is_cell_valid(row, col):
+                                entry.config(fg="red")
+                        else:
+                            self.graph.set_color(row, col, 0, self.edit)
+                    except ValueError:
+                        self.graph.set_color(row, col, 0, self.edit)
+                break
 
     def run(self):
         self.root.mainloop()
