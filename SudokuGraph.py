@@ -70,13 +70,23 @@ class SudokuGraph:
                 return False
         return True
     
+    def get_solver_options(self):
+        """Returns a list of (display_name, method_name) tuples."""
+        solvers = []
+        for name in dir(self):
+            if callable(getattr(self, name)) and name.startswith("solve_"):
+                display = name[6:]  # remove 'solve_'
+                display = ' '.join(word.capitalize() for word in display.split('_'))
+                solvers.append((display, name))
+        return solvers
+
     def solve_brute_force(self):
         # Find the next empty cell
         for (row, col), vertex in self.vertices.items():
             if vertex.color == 0:
                 for num in range(1, self.size + 1):
                     self.set_color(row, col, num)
-                    if self.is_cell_valid(row, col):
+                    if self.is_vertex_valid(vertex):
                         if self.solve_brute_force():
                             return True
                     self.set_color(row, col, 0)  # Backtrack

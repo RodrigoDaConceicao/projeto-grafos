@@ -1,3 +1,4 @@
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -27,10 +28,27 @@ class Window:
         side_panel = ttk.Frame(self.root, padding="10")
         side_panel.grid(row=0, column=1, sticky="N")
 
+        # Solver mapping and dropdown
+        solver_options = self.graph.get_solver_options()
+        self.solver_map = {display: name for display, name in solver_options}
+        solver_display_names = list(self.solver_map.keys())
+
+        ttk.Label(side_panel, text="Solver Algorithm:").pack(fill='x')
+        self.solver_var = tk.StringVar()
+        self.solver_combo = ttk.Combobox(side_panel, textvariable=self.solver_var, state="readonly")
+        self.solver_combo['values'] = solver_display_names
+        if solver_display_names:
+            self.solver_var.set(solver_display_names[0])
+        self.solver_combo.pack(fill='x', pady=(0, 10))
+
         ttk.Button(side_panel, text="Solve", command=self._on_solve).pack(fill='x', pady=5)
         self.edit_button = ttk.Button(side_panel, text="Save" if self.edit else "Edit", command=self._on_toggle_edit)
         self.edit_button.pack(fill='x', pady=5)
         ttk.Button(side_panel, text="Clear", command=self._on_clear).pack(fill='x', pady=5)
+
+        # Status label (below buttons)
+        self.status_label = ttk.Label(side_panel, text="", wraplength=180, anchor="center", justify="center")
+        self.status_label.pack(fill='x', pady=10)
 
     def _build_grid(self, parent):
         for row in range(self.size):
@@ -97,12 +115,29 @@ class Window:
         return "break"  # Stop default event so it doesn't double type
 
     def _on_solve(self):
-        if self.graph.solve_brute_force():
+
+        # Get selected solver method
+        display_name = self.solver_var.get()
+        method_name = self.solver_map.get(display_name)
+        solver_func = getattr(self.graph, method_name, None)
+        if not callable(solver_func):
+            self.status_label.config(text=f"Invalid solver: {method_name}")
+            return
+
+        start_time = time.time()
+        solved = solver_func()
+        elapsed = time.time() - start_time
+
+        if solved:
+            self.status_label.config(text=f"{display_name} solved in {elapsed:.4f} sec")
             for (row, col), entry in self.entries.items():
                 vertex = self.graph.get_vertex(row, col)
                 if not vertex.locked:
+                    entry.delete(0, tk.END)
                     entry.insert(0, str(vertex.color))
                     entry.config(fg='blue')  # User-filled / solver-filled
+        else:
+            self.status_label.config(text=f"{display_name} failed\n{elapsed:.4f} sec")
 
     def _on_toggle_edit(self):
         self.edit = not self.edit
