@@ -1,4 +1,6 @@
 import random
+import pulp
+
 
 class Vertex:
     def __init__(self, row, col, block, color=0, locked=False):
@@ -157,6 +159,73 @@ class SudokuGraph:
         
         # Se nenhuma cor funcionou para este vértice, retorna False para a chamada anterior
         return False
+    
+    def solve_integer_programming(self):
+        """
+        Resolve o Sudoku modelando-o como um problema de Programação Linear Inteira (PLI)
+        e usando a biblioteca PuLP para encontrar a solução.
+        (Versão Corrigida para preservar os números bloqueados)
+        """
+        
+        # 1. Criação do Problema
+        prob = pulp.LpProblem("Sudoku_Solver_ILP", pulp.LpMinimize)
+
+        # 2. Definição da Função Objetivo (trivial)
+        prob += pulp.lpSum(0)
+
+        # 3. Definição das Variáveis
+        choices = pulp.LpVariable.dicts("Choice", (range(1, self.size + 1), range(self.size), range(self.size)), cat='Binary')
+
+        # 4. Definição das Restrições (iguais a antes)
+        # a) Cada célula tem um número
+        for r in range(self.size):
+            for c in range(self.size):
+                prob += pulp.lpSum([choices[v][r][c] for v in range(1, self.size + 1)]) == 1
+        
+        # b) Cada linha tem cada número
+        for v in range(1, self.size + 1):
+            for r in range(self.size):
+                prob += pulp.lpSum([choices[v][r][c] for c in range(self.size)]) == 1
+        
+        # c) Cada coluna tem cada número
+        for v in range(1, self.size + 1):
+            for c in range(self.size):
+                prob += pulp.lpSum([choices[v][r][c] for r in range(self.size)]) == 1
+
+        # d) Cada bloco tem cada número
+        for v in range(1, self.size + 1):
+            for br in range(self.dimension):
+                for bc in range(self.dimension):
+                    prob += pulp.lpSum([choices[v][r][c] 
+                                        for r in range(br * self.dimension, (br + 1) * self.dimension) 
+                                        for c in range(bc * self.dimension, (bc + 1) * self.dimension)]) == 1
+
+        # e) Restrições dos números iniciais
+        for (r, c), vertex in self.vertices.items():
+            if vertex.locked and vertex.color != 0:
+                prob += choices[vertex.color][r][c] == 1
+        
+        # 5. Resolução do Problema
+        try:
+            prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        except pulp.PulpSolverError:
+            print("Erro: PuLP não encontrou um resolvedor. Verifique a instalação.")
+            return False
+
+        # 6. Atualização do Tabuleiro com a Solução (LÓGICA CORRIGIDA)
+        if pulp.LpStatus[prob.status] == 'Optimal':
+            for r in range(self.size):
+                for c in range(self.size):
+                    # Apenas atualiza a cor se a célula NÃO estiver bloqueada
+                    if not self.get_vertex(r, c).locked:
+                        for v in range(1, self.size + 1):
+                            if pulp.value(choices[v][r][c]) == 1:
+                                # Chama set_color sem o argumento locked, que será False por padrão
+                                self.set_color(r, c, v)
+                                break # Passa para a próxima célula
+            return True
+        else:
+            return False
 
 
 
@@ -165,13 +234,11 @@ class SudokuGraph:
             print(f"{key}: color={vertex.color}, neighbors={len(vertex.neighbors)}")
 
     def clear_board(self):
-        """Reseta todas as células para o estado vazio e desbloqueado."""
         for vertex in self.vertices.values():
             vertex.color = 0
             vertex.locked = False
 
     def load_from_string(self, puzzle_string):
-        """Limpa o tabuleiro e carrega um novo puzzle a partir de uma string de 81 caracteres."""
         if len(puzzle_string) != self.size ** 2:
             raise ValueError(f"A string do puzzle deve ter {self.size**2} caracteres.")
         
