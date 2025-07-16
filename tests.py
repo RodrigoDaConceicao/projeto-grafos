@@ -74,13 +74,14 @@ def run_tests():
     graph = SudokuGraph()
     solver_options = graph.get_solver_options()
 
+    summary = {}
+
     for display_name, method_name in solver_options:
         print(f"\n=== Testing Solver: {display_name} ===")
         for difficulty, boards in all_difficulties.items():
-            print(f"\n--- Difficulty: {difficulty} ---")
             for i, board in enumerate(boards):
+                board_name = f"{difficulty}_{i + 1}"
                 times = []
-                print(f"\nBoard {i + 1}")
                 for attempt in range(10):
                     graph.load_from_string(board)
                     start = time.perf_counter()
@@ -93,14 +94,28 @@ def run_tests():
 
                 z_p_results = z_test_series(times)
                 for attempt_idx, (elapsed, (z, p)) in enumerate(zip(times, z_p_results), start=1):
-                    print(f"Attempt {attempt_idx}: {elapsed:.6f}s | Z = {z:+.2f}, p = {p:.4f}")
+                    print(f"{difficulty}_{i + 1}\t{elapsed:.6f}s\t{z:+.2f}")
                 
                 if times:
                     avg = sum(times) / len(times)
-                    min_time = min(times)
-                    max_time = max(times)
-                    print(f"\nStats for Board {i + 1}:")
-                    print(f"Avg Time = {avg:.6f}s, Min = {min_time:.6f}s, Max = {max_time:.6f}s")
+
+                    if board_name not in summary:
+                        summary[board_name] = {"ec": board.count("0")}
+                    summary[board_name][display_name] = avg
+    # Print summary table
+    print("\n=== Summary Table (Average Time per Algorithm) ===")
+    # Header
+    header = ["Board"] + ["Empty Cells"] + [name for name, _ in solver_options]
+    print("\t".join(header))
+    for board_name in sorted(summary.keys()):
+        row = [board_name, str(summary[board_name]["ec"])]
+        for name, _ in solver_options:
+            time_val = summary[board_name].get(name, "-")
+            if isinstance(time_val, float):
+                row.append(f"{time_val:.6f}")
+            else:
+                row.append(time_val)
+        print("\t".join(row))
 
 if __name__ == "__main__":
     run_tests()
